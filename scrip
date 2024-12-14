@@ -1,0 +1,235 @@
+pip install python-telegram-bot
+
+
+import random
+import time
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
+import asyncio
+import nest_asyncio
+
+# Monster names list
+MONSTER_NAMES = [
+    "Goblin", "Vampire", "Werewolf", "Troll", "Skeleton", "Zombie", "Dragon", "Ogre", "Griffin",
+    "Chimera", "Minotaur", "Witch", "Giant", "Banshee", "Mummy", "Hydra", "Imp", "Ghost", "Kraken",
+    "Golem", "Lich", "Cyborg", "Harpy", "Manticore", "Basilisk", "Demon", "Wraith", "Succubus", "Gargoyle"
+]
+
+# Class-specific monster weaknesses
+class_weaknesses = {
+    "Warrior": ["Troll", "Minotaur", "Giant"],
+    "Priest": ["Skeleton", "Vampire", "Zombie"],
+    "Sorceress": ["Manticore", "Basilisk", "Demon"]
+}
+
+# Game classes (Player, Monster, FinalBoss)
+class Player:
+    def __init__(self, name, class_type):
+        self.name = name
+        self.class_type = class_type
+        self.level = 1
+        self.hp = 100
+        self.ap = 10
+        self.experience = 0
+        self.spell = self.choose_spell()
+
+    def choose_spell(self):
+        if self.class_type == "Warrior":
+            return self.slash
+        elif self.class_type == "Priest":
+            return self.holy_radiance
+        elif self.class_type == "Sorceress":
+            return self.fireball
+
+    async def activate_passive(self, update):
+        chance = random.random()
+        if chance < 0.2:  # 20% chance to activate passive ability
+            if self.class_type == "Warrior":
+                await self.increase_defense(update)
+            elif self.class_type == "Priest":
+                await self.self_heal(update)
+            elif self.class_type == "Sorceress":
+                await self.vampiric_bite(update)
+
+    async def increase_defense(self, update):
+        self.hp += 20
+        await update.message.reply_text(f"{self.name}'s **passive ability** activates! Defense increased by 20 HP. 🛡️")
+
+    async def self_heal(self, update):
+        heal_amount = random.randint(15, 22)
+        self.hp += heal_amount
+        await update.message.reply_text(f"{self.name}'s **passive ability** activates! Healed for {heal_amount} HP. ❤️")
+
+    async def vampiric_bite(self, update):
+        damage = random.randint(15, 25)
+        heal = damage // 2
+        self.hp += heal
+        await update.message.reply_text(f"{self.name}'s **passive ability** activates! Vampiric Bite heals for {heal} HP after dealing {damage} damage. 🩸")
+
+    async def slash(self, monster, update):
+        await self.activate_passive(update)
+        damage = random.randint(10, 20)
+        if monster.name in class_weaknesses[self.class_type]:
+            damage *= 1.15
+        monster.hp -= damage
+        return f"{self.name} slashes at {monster.name} for {damage} damage! ⚔️"
+
+    async def holy_radiance(self, monster, update):
+        await self.activate_passive(update)
+        damage = random.randint(15, 25)
+        if monster.name in class_weaknesses[self.class_type]:
+            damage *= 1.15
+        monster.hp -= damage
+        return f"{self.name} casts Holy Radiance on {monster.name} for {damage} damage! ✨"
+
+    async def fireball(self, monster, update):
+        await self.activate_passive(update)
+        damage = random.randint(20, 30)
+        if monster.name in class_weaknesses[self.class_type]:
+            damage *= 1.15
+        monster.hp -= damage
+        return f"{self.name} casts Fireball at {monster.name} for {damage} damage! 🔥"
+
+    def level_up(self):
+        self.level += 1
+        self.hp += 20
+        self.ap += 5
+        self.experience = 0
+
+class Monster:
+    def __init__(self, level):
+        self.name = random.choice(MONSTER_NAMES)
+        self.level = level
+        self.hp = 50 + (level * 20)
+        self.ap = 5 + (level * 2)
+
+    def attack(self, player):
+        damage = random.randint(5, self.ap)
+        player.hp -= damage
+        return f"{self.name} attacks {player.name} for {damage} damage!"
+
+class FinalBoss(Monster):
+    def __init__(self):
+        super().__init__(6)
+        self.name = "?????"
+        self.hp = 115
+        self.ap = 30
+
+    def attack(self, player):
+        damage = random.randint(20, self.ap)
+        player.hp -= damage
+        return f"{self.name} unleashes a devastating blow on {player.name} for {damage} damage! 💥"
+
+# Bot functions
+class Game:
+    def __init__(self):
+        self.players = {}
+        self.scores = {}
+
+    async def start_game(self, update: Update, context: CallbackContext):
+        await update.message.reply_text(
+            "Welcome to the DungeonRpg! Type /newgame <class> to start a new adventure. "
+            "(Example: /newgame Sorceress) Classes include Warrior, Priest, & Sorceress. "
+            "Each has a unique passive ability. 🏰"
+        )
+
+    async def new_game(self, update: Update, context: CallbackContext):
+        try:
+            name = update.message.from_user.first_name
+            class_choice = context.args[0].capitalize()
+            if class_choice not in ["Warrior", "Priest", "Sorceress"]:
+                await update.message.reply_text("Invalid class! Choose Warrior, Priest, or Sorceress.")
+                return
+
+            player = Player(name, class_choice)
+            self.players[update.message.chat_id] = player
+            await update.message.reply_text(f"Welcome, {player.name}! You are a {player.class_type}. Let the adventure begin! 🗡️")
+            await self.dungeon_level(update, context, player, 1)
+        except IndexError:
+            await update.message.reply_text("Please specify a class! Example: /newgame Warrior")
+
+    async def dungeon_level(self, update: Update, context: CallbackContext, player: Player, current_level: int):
+        if current_level == 4:
+            await self.final_boss_battle(update, context, player)
+            return
+
+        await update.message.reply_text(f"\n🏰 Entering Dungeon Level {current_level}... 🗡️\n")
+        monster = Monster(current_level)
+        await self.battle(update, context, player, monster, current_level)
+
+    async def battle(self, update: Update, context: CallbackContext, player: Player, monster: Monster, current_level: int):
+        while player.hp > 0 and monster.hp > 0:
+            player_action = await player.spell(monster, update)
+            await update.message.reply_text(player_action)
+            await asyncio.sleep(2)
+
+            if monster.hp <= 0:
+                await update.message.reply_text(f"🎉 {monster.name} is defeated! 🎉")
+                player.experience += 10
+                if player.experience >= 100:
+                    player.level_up()
+                    await update.message.reply_text(f"{player.name} has leveled up to Level {player.level}! 🆙")
+
+                if random.random() < 0.2:
+                    heal_amount = player.hp // 3
+                    player.hp += heal_amount
+                    await update.message.reply_text(f"{player.name} found a healing potion and healed for {heal_amount} HP! 🧪")
+
+                break
+
+            monster_action = monster.attack(player)
+            await update.message.reply_text(monster_action)
+            await asyncio.sleep(1)
+
+            if player.hp <= 0:
+                await update.message.reply_text(f"{player.name} is defeated! ☠️")
+                await update.message.reply_text(
+                    "Welcome to the Dungeon! Type /newgame <class> to start a new adventure. "
+                    "(Example: /newgame Sorceress) Classes include Warrior, Priest, & Sorceress. "
+                    "Each has a unique passive ability. 🏰"
+                )
+                return
+
+            await asyncio.sleep(1)
+            await update.message.reply_text(f"{player.name}: ❤️ {player.hp} HP, {monster.name}: {monster.hp} HP")
+
+        if player.hp > 0 and current_level < 4:
+            await self.dungeon_level(update, context, player, current_level + 1)
+
+    async def final_boss_battle(self, update: Update, context: CallbackContext, player: Player):
+        final_boss = FinalBoss()
+        await update.message.reply_text("\n🔥 You have reached the Final Boss! Prepare for battle! 🔥")
+        await self.battle(update, context, player, final_boss, current_level=4)
+        if player.hp > 0:
+            await update.message.reply_text(f"🎉 Congratulations, {player.name}, you defeated the Final Boss! 🎉")
+            await update.message.reply_text(
+                "Welcome to the Dungeon! Type /newgame <class> to start a new adventure. "
+                "(Example: /newgame Sorceress) Classes include Warrior, Priest, & Sorceress. "
+                "Each has a unique passive ability. 🏰"
+            )
+
+        self.scores[player.name] = player.experience
+        await self.show_scoreboard(update)
+
+    async def show_scoreboard(self, update: Update):
+        sorted_scores = sorted(self.scores.items(), key=lambda x: x[1], reverse=True)
+        leaderboard = "🏆 Leaderboard:\n"
+        for idx, (name, score) in enumerate(sorted_scores, 1):
+            leaderboard += f"{idx}. {name} - {score} XP ✨\n"
+
+        await update.message.reply_text(leaderboard)
+
+# Set up the Telegram Bot
+def main():
+    application = Application.builder().token("7998556607:AAGzsHO6x4OhkSs5g79zL4c3cSWOlSEy-H8").build()
+
+    game = Game()
+    application.add_handler(CommandHandler("start", game.start_game))
+    application.add_handler(CommandHandler("newgame", game.new_game))
+    application.add_handler(CommandHandler("scoreboard", game.show_scoreboard))
+
+    application.run_polling()
+
+if __name__ == "__main__":
+    nest_asyncio.apply()
+    main()
