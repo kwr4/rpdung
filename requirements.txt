@@ -1,2 +1,8 @@
 pip install python-telegram-bot
 
+import random
+import time
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
+import asyncio
+import nest_asyncio
