@@ -1,4 +1,4 @@
-pip install python-telegram-bot
+
 
 import random
 import time
